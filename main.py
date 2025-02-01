@@ -14,24 +14,20 @@ def login_instagram(username, password):
     cl.login(username, password)
     return cl
 
-# Function to change the nickname in a thread
 def change_nickname_in_group(cl, thread_id, new_nickname, delay_seconds):
     global stop_flag
-    # Fetching the current thread
-    thread = cl.thread_info(thread_id)
+    thread = cl.direct_thread(thread_id)  # Fetch thread using direct_thread
 
-    # Iterating through users in the thread
     for user in thread.users:
         if stop_flag:  # Check the stop flag
             print("Process stopped by the user.")
             break
 
         try:
-            # Changing nickname of the user in the thread
             print(f"Changing nickname for user {user.username} to {new_nickname}")
-            cl.thread_edit(thread_id, user.id, new_nickname)
+            cl.direct_thread_edit_title(thread_id, new_nickname)  # Corrected method
             print(f"Nickname changed to {new_nickname}")
-            time.sleep(delay_seconds)  # Adding delay between nickname changes
+            time.sleep(delay_seconds)
         except Exception as e:
             print(f"Error changing nickname for {user.username}: {str(e)}")
 
