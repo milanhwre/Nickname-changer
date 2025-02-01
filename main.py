@@ -1,178 +1,142 @@
-from flask import Flask, request, jsonify, render_template_string
+from flask import Flask, render_template_string, request, redirect, url_for
 from instagrapi import Client
 import time
 import threading
 
 app = Flask(__name__)
 
-# Global flag to control nickname changing process
+# Global flag to stop the process
 stop_flag = False
 
-# HTML Frontend
-HTML_TEMPLATE = """
+# Function to login to Instagram
+def login_instagram(username, password):
+    cl = Client()
+    cl.login(username, password)
+    return cl
+
+# Function to change the nickname in a thread
+def change_nickname_in_group(cl, thread_id, new_nickname, delay_seconds):
+    global stop_flag
+    # Fetching the current thread
+    thread = cl.thread_info(thread_id)
+
+    # Iterating through users in the thread
+    for user in thread.users:
+        if stop_flag:  # Check the stop flag
+            print("Process stopped by the user.")
+            break
+
+        try:
+            # Changing nickname of the user in the thread
+            print(f"Changing nickname for user {user.username} to {new_nickname}")
+            cl.thread_edit(thread_id, user.id, new_nickname)
+            print(f"Nickname changed to {new_nickname}")
+            time.sleep(delay_seconds)  # Adding delay between nickname changes
+        except Exception as e:
+            print(f"Error changing nickname for {user.username}: {str(e)}")
+
+# HTML template as a string
+html_template = '''
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Instagram Group Nickname Automation By Hater</title>
+    <title>Instagram Nickname Changer</title>
     <style>
         body {
             font-family: Arial, sans-serif;
-            background-color: #007bff;
-            margin: 0;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
+            margin: 50px;
         }
         .container {
-            background: #333;
-            color: white;
-            border-radius: 10px;
-            padding: 20px;
-            width: 300px;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+            width: 400px;
+            margin: auto;
         }
-        h1 {
-            font-size: 18px;
-            text-align: center;
-            margin-bottom: 20px;
-            color: orange;
-        }
-        input {
+        input[type="text"], input[type="password"], input[type="number"] {
             width: 100%;
             padding: 10px;
             margin: 10px 0;
-            border: none;
-            border-radius: 5px;
         }
         button {
             width: 100%;
             padding: 10px;
-            border: none;
-            border-radius: 5px;
-            background-color: orange;
+            background-color: #007bff;
             color: white;
-            font-size: 16px;
-            cursor: pointer;
+            border: none;
         }
         button:hover {
-            background-color: darkorange;
+            background-color: #0056b3;
         }
-        .stop-button {
-            background-color: red;
+        h1 {
+            text-align: center;
         }
-        .stop-button:hover {
-            background-color: darkred;
+        .stop-btn {
+            background-color: #e74c3c;
+        }
+        .stop-btn:hover {
+            background-color: #c0392b;
         }
     </style>
 </head>
 <body>
+
     <div class="container">
-        <h1>Instagram Group Nickname Automation By Hater</h1>
-        <form id="automationForm">
-            <input type="text" id="username" placeholder="Instagram Username" required>
-            <input type="password" id="password" placeholder="Instagram Password" required>
-            <input type="text" id="chatId" placeholder="Target Group Chat ID" required>
-            <input type="text" id="newNickname" placeholder="New Nickname" required>
-            <input type="number" id="delay" placeholder="Delay (seconds)" min="1" required>
+        <h1>Change Instagram Nickname Changer By Hater</h1>
+        <form method="POST">
+            <label for="username">Instagram Username:</label>
+            <input type="text" name="username" id="username" required>
+
+            <label for="password">Instagram Password:</label>
+            <input type="password" name="password" id="password" required>
+
+            <label for="thread_id">Thread ID:</label>
+            <input type="text" name="thread_id" id="thread_id" required>
+
+            <label for="new_nickname">New Nickname:</label>
+            <input type="text" name="new_nickname" id="new_nickname" required>
+
+            <label for="delay_seconds">Delay (seconds):</label>
+            <input type="number" name="delay_seconds" id="delay_seconds" value="2" required>
+
             <button type="submit">Change Nicknames</button>
         </form>
-        <button class="stop-button" id="stopButton">Stop Changing</button>
-        <p id="result" style="text-align: center; margin-top: 10px;"></p>
+
+        <form method="POST" action="/stop">
+            <button class="stop-btn" type="submit">Stop</button>
+        </form>
     </div>
 
-    <script>
-        const form = document.getElementById('automationForm');
-        const stopButton = document.getElementById('stopButton');
-        const result = document.getElementById('result');
-
-        form.addEventListener('submit', async (e) => {
-            e.preventDefault();
-            const username = document.getElementById('username').value;
-            const password = document.getElementById('password').value;
-            const chatId = document.getElementById('chatId').value;
-            const newNickname = document.getElementById('newNickname').value;
-            const delay = document.getElementById('delay').value;
-
-            result.textContent = 'Processing...';
-
-            try {
-                const response = await fetch('/change-nicknames', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ username, password, chatId, newNickname, delay })
-                });
-                const data = await response.json();
-                result.textContent = data.message;
-            } catch (error) {
-                result.textContent = 'An error occurred. Please try again.';
-            }
-        });
-
-        stopButton.addEventListener('click', async () => {
-            result.textContent = 'Stopping process...';
-
-            try {
-                const response = await fetch('/stop-changing', { method: 'POST' });
-                const data = await response.json();
-                result.textContent = data.message;
-            } catch (error) {
-                result.textContent = 'An error occurred while stopping the process.';
-            }
-        });
-    </script>
 </body>
 </html>
-"""
+'''
 
-# Route to serve the HTML
-@app.route('/')
+@app.route('/', methods=['GET', 'POST'])
 def index():
-    return render_template_string(HTML_TEMPLATE)
-
-# Backend API route to change nicknames
-@app.route('/change-nicknames', methods=['POST'])
-def change_nicknames():
     global stop_flag
-    stop_flag = False
-    data = request.json
-    username = data.get('username')
-    password = data.get('password')
-    chat_id = data.get('chatId')
-    new_nickname = data.get('newNickname')
-    delay = int(data.get('delay', 1))
+    if request.method == 'POST':
+        # Get the form data for nickname changing
+        username = request.form['username']
+        password = request.form['password']
+        thread_id = request.form['thread_id']
+        new_nickname = request.form['new_nickname']
+        delay_seconds = int(request.form['delay_seconds'])
 
-    if not all([username, password, chat_id, new_nickname]):
-        return jsonify({"message": "All fields are required!"}), 400
+        # Reset stop flag before starting
+        stop_flag = False
 
-    def nickname_changer():
-        global stop_flag
-        try:
-            client = Client()
-            client.login(username, password)
-            participants = client.direct_thread(chat_id).users
+        # Log in to Instagram and start changing nicknames in a separate thread
+        cl = login_instagram(username, password)
+        threading.Thread(target=change_nickname_in_group, args=(cl, thread_id, new_nickname, delay_seconds)).start()
 
-            for user in participants:
-                if stop_flag:
-                    break
-                client.direct_thread_update_title(chat_id, new_nickname)
-                time.sleep(delay)
+        return redirect(url_for('index'))  # Redirect to the home page after processing
 
-        except Exception as e:
-            print(f"Error: {str(e)}")
+    return render_template_string(html_template)
 
-    thread = threading.Thread(target=nickname_changer)
-    thread.start()
-    return jsonify({"message": "Nickname change process started."})
-
-# Backend API route to stop nickname changing
-@app.route('/stop-changing', methods=['POST'])
-def stop_changing():
+@app.route('/stop', methods=['POST'])
+def stop():
     global stop_flag
     stop_flag = True
-    return jsonify({"message": "Stopping nickname change process..."})
+    return redirect(url_for('index'))  # Redirect back to the home page after stopping
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
