@@ -77,7 +77,7 @@ html_template = '''
 <body>
 
     <div class="container">
-        <h1>Change Instagram Nickname Changer By Hater</h1>
+        <h1>Instagram GC Nickname Changer By Hater</h1>
         <form method="POST">
             <label for="username">Instagram Username:</label>
             <input type="text" name="username" id="username" required>
